@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>進化するフルーツパズル - 操作版</title>
+    <style>
+        body { margin: 0; background: #faf8ef; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Hiragino Kaku Gothic ProN', sans-serif; overflow: hidden; }
+        #game-container { position: relative; width: 400px; height: 650px; }
+        canvas { background: #fff9e6; border: 5px solid #8d6e63; border-top: none; border-radius: 0 0 20px 20px; }
+        #score { position: absolute; top: -40px; left: 0; font-size: 28px; font-weight: bold; color: #5d4037; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="score">SCORE: 0</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script>
+        const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
+
+        const engine = Engine.create();
+        const world = engine.world;
+        let score = 0;
+        let currentFruit = null; // 次に落とすフルーツ（待機中）
+        let isDropping = false;   // 連続投下防止
+
+        const render = Render.create({
+            element: document.getElementById('game-container'),
+            engine: engine,
+            options: { width: 400, height: 600, wireframes: false, background: '#fff9e6' }
+        });
+
+        Render.run(render);
+        Runner.run(Runner.create(), engine);
+
+        // 壁と床
+        const wallOptions = { isStatic: true, render: { fillStyle: '#8d6e63' } };
+        Composite.add(world, [
+            Bodies.rectangle(200, 595, 400, 10, wallOptions),
+            Bodies.rectangle(5, 300, 10, 600, wallOptions),
+            Bodies.rectangle(395, 300, 10, 600, wallOptions)
+        ]);
+
+        const FRUITS = [
+            { radius: 15, color: '#ff4d4d', score: 2,  label: '0' }, // さくらんぼ
+            { radius: 25, color: '#ff9800', score: 4,  label: '1' }, // いちご
+            { radius: 35, color: '#9c27b0', score: 8,  label: '2' }, // ぶどう
+            { radius: 45, color: '#fdd835', score: 16, label: '3' }, // デコポン
+            { radius: 55, color: '#ff5722', score: 32, label: '4' }, // かき
+            { radius: 70, color: '#e91e63', score: 64, label: '5' }, // りんご
+            { radius: 85, color: '#fb8c00', score: 128, label: '6' }, // なし
+            { radius: 100, color: '#fff176', score: 256, label: '7' }, // ぱいん
+            { radius: 120, color: '#4caf50', score: 512, label: '8' }, // めろん
+            { radius: 140, color: '#2e7d32', score: 1024, label: '9' }, // すいか
+        ];
+
+        // --- 待機中のフルーツを作る関数 ---
+        function createNextFruit() {
+            const index = Math.floor(Math.random() * 4); // 最初は小さい4種類から
+            const config = FRUITS[index];
+            const fruit = Bodies.circle(200, 50, config.radius, {
+                isStatic: true, // 投下するまでは固定
+                isSensor: true, // 他の物とぶつからない
+                label: config.label,
+                render: { fillStyle: config.color, strokeStyle: '#333', lineWidth: 2 }
+            });
+            currentFruit = fruit;
+            Composite.add(world, fruit);
+            isDropping = false;
+        }
+
+        createNextFruit();
+
+        // --- マウス移動に合わせて待機フルーツを動かす ---
+        window.addEventListener('mousemove', (e) => {
+            if (!currentFruit || isDropping) return;
+            const rect = render.canvas.getBoundingClientRect();
+            let x = e.clientX - rect.left;
+            
+            // 壁からはみ出さないように制限
+            const r = FRUITS[parseInt(currentFruit.label)].radius;
+            if (x < 10 + r) x = 10 + r;
+            if (x > 390 - r) x = 390 - r;
+
+            Body.setPosition(currentFruit, { x: x, y: 50 });
+        });
+
+        // --- クリックで投下 ---
+        window.addEventListener('mousedown', () => {
+            if (!currentFruit || isDropping) return;
+            isDropping = true;
+
+            // 物理演算を有効化
+            Body.setStatic(currentFruit, false);
+            currentFruit.isSensor = false;
+
+            // 少し待ってから次のフルーツを生成（連続投下を防ぐ）
+            setTimeout(() => {
+                createNextFruit();
+            }, 800);
+        });
+
+        // --- 合体ロジック ---
+        Events.on(engine, 'collisionStart', (event) => {
+            event.pairs.forEach((pair) => {
+                const { bodyA, bodyB } = pair;
+                if (bodyA.label === bodyB.label && bodyA.label !== '9' && !bodyA.isStatic && !bodyB.isStatic) {
+                    const currentIndex = parseInt(bodyA.label);
+                    const newX = (bodyA.position.x + bodyB.position.x) / 2;
+                    const newY = (bodyA.position.y + bodyB.position.y) / 2;
+
+                    Composite.remove(world, [bodyA, bodyB]);
+
+                    score += FRUITS[currentIndex].score;
+                    document.getElementById('score').innerText = `SCORE: ${score}`;
+
+                    // 合体後のフルーツ生成
+                    const nextIndex = currentIndex + 1;
+                    const config = FRUITS[nextIndex];
+                    const nextFruit = Bodies.circle(newX, newY, config.radius, {
+                        label: config.label,
+                        render: { fillStyle: config.color, strokeStyle: '#333', lineWidth: 2 }
+                    });
+                    Composite.add(world, nextFruit);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
